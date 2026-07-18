@@ -19,7 +19,9 @@ Phase 1 is deliberately read-only: no autonomous trading, exchange order placeme
 
 See the full design:
 
-- [CherryFin Full System Design](docs/architecture/CherryFin_Full_System_Design.md)
+- [CherryFin Full System Design](docs/architecture/CherryFin_Full_System_Design.md) — product scope, logical architecture, phases
+- [CherryFin Phase 1 Detailed Design](docs/architecture/CherryFin_Phase1_Detailed_Design.md) — locked stack, database schema, API contracts, compliance, testing
+- [Architecture Decision Records](docs/adr) — individual technology decisions
 
 ## Product evolution
 
