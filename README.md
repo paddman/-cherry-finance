@@ -1,14 +1,14 @@
 # CherryFin
 
-**AI Financial Research & Personal Finance Assistant**
+**AI Startup CFO, Company Launch & Financial Intelligence Assistant**
 
-CherryFin is an Android-first, iOS-ready multi-asset financial assistant for asking questions, searching current information, analyzing stock/crypto charts and documents, and sending the results through LINE, Telegram, or Google Drive.
+CherryFin is a Thailand-first, Android-first, iOS-ready AI assistant for starting and operating a company. It focuses on startup planning, accounting, tax, business data, and CFO metrics while retaining multi-asset investment research. Answers and documents can move through LINE, Telegram, and Google Drive.
 
 ## Phase 1
 
-- Thai/English financial and investment Q&A
-- Source-grounded web and multi-asset market research for SET/mai, NYSE/Nasdaq, ETFs, funds, crypto, FX, and commodities
-- Chart screenshot, PDF, CSV, and spreadsheet analysis
+- Thai/English company-launch, startup, accounting, tax, financial, and investment Q&A
+- Official-source research from DBD and the Revenue Department, plus multi-asset market research for SET/mai, NYSE/Nasdaq, ETFs, funds, crypto, FX, and commodities
+- Analysis of invoices, receipts, tax documents, statements, cap tables, budgets, chart screenshots, PDF, CSV, and spreadsheets
 - LINE and Telegram inbound/outbound messaging
 - Google Drive selected-file search, read, and report save
 - Conversation history, timestamps, confidence, and audit trails
@@ -27,10 +27,11 @@ See the full design:
 
 ```text
 Phase 1: Ask + Search + Analyze + Send
-Phase 2: Understand my money
-Phase 3: Understand my investments
-Phase 4: Test and learn strategies
-Phase 5: Execute only behind hard controls
+Phase 2: Launch and organize my company
+Phase 3: Run accounting, tax, and business data
+Phase 4: Understand my money and investments
+Phase 5: Test and learn strategies
+Phase 6: Execute only behind hard controls
 ```
 
 ## Initial platform
@@ -39,5 +40,6 @@ Phase 5: Execute only behind hard controls
 - Android-first, iOS-ready
 - PostgreSQL, Redis, and S3-compatible object storage
 - OpenAI-compatible model gateway for local Qwen and vision models
+- Thailand-first company-launch, accounting, tax, and startup-metric tools with source/effective-date lineage
 - Multi-asset market layer with venue, currency, session, timestamp, and corporate-action awareness
 - LINE, Telegram, and Google Drive connectors
