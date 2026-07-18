@@ -2,20 +2,22 @@
 
 **Document status:** Proposed detailed design
 **Parent:** [CherryFin Full System Design](CherryFin_Full_System_Design.md)
-**Scope:** Everything needed to start Phase 0/1 implementation — concrete stack, schema, API contracts, error model, job contracts, compliance, and testing. The primary Phase 1 domain is Thailand-first startup/company launch, accounting, tax, and business data; investment research remains supported. Decisions are recorded individually in [docs/adr](../adr).
+**Scope:** Everything needed to start Phase 0/1 implementation — concrete stack, schema, API contracts, error model, job contracts, compliance, and testing. The primary Phase 1 domain is Thailand-first accounting and tax readiness, extended by Startup CFO, company-launch, business-data, and investment research capabilities. Decisions are recorded individually in [docs/adr](../adr).
 
 ---
 
 ## 0. Phase 1 product boundary
 
-CherryFin Phase 1 is an AI Startup CFO and company-launch assistant delivered through Android, LINE, Telegram, and Google Drive. It can:
+CherryFin Phase 1 is an accounting-first AI assistant delivered through Android, LINE, Telegram, and Google Drive. Its daily loop is document → extract → draft entry → validate → human review → report/tax readiness. It can:
 
-- Answer and research Thai company-establishment, accounting, tax, startup-metric, and investment questions using current sources.
-- Analyze invoices, receipts, tax documents, account exports, financial statements, cap tables, budgets, and market charts.
+- Receive invoices, receipts, statements, withholding-tax certificates, spreadsheets, and accounting exports.
+- Extract accounting facts with field-level evidence and confidence, then detect duplicates, missing fields, arithmetic inconsistencies, and period conflicts.
+- Propose balanced debit/credit draft lines, categories, tax-treatment questions, and supporting-document requests for confirm/correct/reject review.
+- Answer Thai accounting, tax, Startup CFO, company-establishment, business-data, and investment questions using current sources.
 - Produce deterministic calculations and dated checklists, then save/send them with source evidence.
 - Use DBD Biz Regist/DBD services and Revenue Department e-Filing/e-Tax information as authoritative Thailand-first references.
 
-Phase 1 cannot submit government registrations or tax returns, sign/certify documents, issue audit opinions, represent professional advice, move money, or place trades. It prepares information and evidence for explicit user and professional review.
+Phase 1 cannot post unreviewed entries to a statutory ledger, submit government registrations or tax returns, sign/certify documents, issue audit opinions, represent professional advice, move money, or place trades. It prepares traceable drafts and evidence for explicit user or professional review.
 
 ---
 
@@ -147,6 +149,33 @@ CREATE TABLE attachments (
 );
 CREATE INDEX ON attachments (user_id, created_at DESC);
 
+-- Accounting review drafts -------------------------------------------
+
+CREATE TABLE accounting_drafts (
+  id                   uuid PRIMARY KEY,
+  user_id              uuid NOT NULL REFERENCES users(id),
+  attachment_id        uuid NOT NULL REFERENCES attachments(id),
+  document_type        text NOT NULL
+                       CHECK (document_type IN ('invoice','receipt','statement',
+                                                'wht_certificate','accounting_export','other')),
+  document_json        jsonb NOT NULL,              -- extracted parties, dates, totals, VAT/WHT
+  proposed_entry_json  jsonb NOT NULL,              -- balanced debit/credit draft; never auto-posted
+  evidence_json        jsonb NOT NULL,              -- field boxes/pages, confidence, rule/formula versions
+  confidence           text NOT NULL CHECK (confidence IN ('high','medium','low')),
+  duplicate_of_id      uuid REFERENCES accounting_drafts(id),
+  status               text NOT NULL DEFAULT 'pending'
+                       CHECK (status IN ('pending','confirmed','corrected','rejected')),
+  reviewer_user_id     uuid REFERENCES users(id),
+  review_note          text,
+  reviewed_at          timestamptz,
+  created_at           timestamptz NOT NULL DEFAULT now(),
+  updated_at           timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX ON accounting_drafts (user_id, status, created_at DESC);
+CREATE UNIQUE INDEX accounting_drafts_attachment
+  ON accounting_drafts (attachment_id)
+  WHERE status <> 'rejected';
+
 -- Orchestration -------------------------------------------------------
 
 CREATE TABLE agent_runs (
@@ -252,6 +281,7 @@ CREATE INDEX ON audit_events (user_id, created_at DESC);
 Notes:
 
 - `messages_dedupe` plus idempotent job ids (ADR-004) together satisfy the no-duplicate-answer acceptance criterion.
+- `accounting_drafts` is a review inbox, not the statutory ledger. Application validation requires total debits = total credits and at least one evidence link per proposed line before a draft can be confirmed.
 - Full tool outputs above ~8 KB go to object storage; `tool_calls.output_digest` stores the pointer. Keeps Postgres lean and lets PDPA erasure delete content by prefix.
 - Object storage layout: `users/{userId}/attachments/{attachmentId}` and `users/{userId}/tool-outputs/{toolCallId}` — user-prefix layout makes per-user erasure a prefix delete.
 
@@ -308,7 +338,17 @@ Direct-to-storage, so the API never proxies file bytes:
 
 MIME allowlist (Phase 1): `image/png`, `image/jpeg`, `image/webp`, `application/pdf`, `text/csv`, `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`.
 
-### 3.4 Run streaming (SSE)
+### 3.4 Accounting review workflow
+
+- `GET /v1/accounting/drafts?status=pending` lists the user's accounting inbox.
+- `GET /v1/accounting/drafts/{id}` returns extracted fields, evidence locations, validations, duplicate match, and proposed balanced lines.
+- `POST /v1/accounting/drafts/{id}/confirm` accepts the proposal after server-side balance/evidence validation.
+- `POST /v1/accounting/drafts/{id}/correct` accepts corrected fields/lines plus a review note and records the before/after diff.
+- `POST /v1/accounting/drafts/{id}/reject` records a rejection reason.
+
+Every transition is owner-authorized, idempotent, append-audited, and rejects stale status updates. Confirmation means “reviewed draft” in Phase 1; it does not post to a statutory ledger or file a return.
+
+### 3.5 Run streaming (SSE)
 
 `GET /v1/runs/{id}/events` (also works mid-run; replays from `Last-Event-ID`):
 
@@ -322,7 +362,7 @@ event: error         data: {"code":"MODEL_UNAVAILABLE","traceId":"..."}
 
 Events are also persisted (Redis stream, 24h TTL) so LINE/Telegram flows — which can't hold an SSE connection — deliver the final answer via the worker instead.
 
-### 3.5 Rate limits (initial)
+### 3.6 Rate limits (initial)
 
 | Scope | Limit |
 |---|---|
@@ -343,7 +383,7 @@ Any state may transition to `failed` (terminal, with `error_code`) or `degraded`
 
 ### 4.2 Intent classification
 
-Small local model with a fixed label set (`company.launch`, `company.compliance`, `accounting.question`, `accounting.document_analyze`, `tax.question`, `tax.calendar`, `startup.metrics`, `finance.question`, `market.lookup`, `web.research`, `chart.analyze`, `document.summarize`, `drive.search`, `answer.send`, `answer.save`, `smalltalk`, `out_of_scope`). Confidence below threshold → ask a clarifying question instead of guessing. Requests unrelated to company building, accounting, tax, finance, business data, or investing are `out_of_scope` — keeping the product honest and the eval surface bounded.
+Small local model with a fixed label set (`accounting.question`, `accounting.document_analyze`, `accounting.review`, `tax.question`, `tax.calendar`, `startup.metrics`, `company.launch`, `company.compliance`, `finance.question`, `market.lookup`, `web.research`, `chart.analyze`, `document.summarize`, `drive.search`, `answer.send`, `answer.save`, `smalltalk`, `out_of_scope`). Confidence below threshold → ask a clarifying question instead of guessing. Requests unrelated to company building, accounting, tax, finance, business data, or investing are `out_of_scope` — keeping the product honest and the eval surface bounded.
 
 ### 4.3 Tool loop guardrails
 
@@ -354,6 +394,8 @@ Small local model with a fixed label set (`company.launch`, `company.compliance`
 ### 4.4 Answer composition rules
 
 The composer must fill the answer contract (`summary/facts/analysis/risks/unknowns/sources/dataAsOf/confidence`). Enforcement is structural: facts array entries must each carry a `sourceId` referencing a `sources` row; the API rejects persistence of an answer whose facts lack sources. This mechanically implements "ground answers in evidence".
+
+For `accounting.document_analyze`, the final answer also references an `accountingDraftId`. The draft validator rejects unbalanced lines, lines without evidence, unresolved arithmetic mismatches, and any attempt to mark a draft as posted or filed in Phase 1.
 
 ---
 
@@ -374,6 +416,8 @@ apps/mobile/
     (auth)/sign-in.tsx
     (main)/index.tsx      # conversation list
     (main)/chat/[id].tsx  # chat + attachments + answer cards
+    (main)/accounting-inbox.tsx # pending/confirmed/corrected/rejected drafts
+    (main)/accounting/[id].tsx  # evidence + debit/credit review
     (main)/connections.tsx# LINE/TG/Drive linking
     (main)/settings.tsx
   src/
@@ -385,6 +429,7 @@ apps/mobile/
 Key UI contracts:
 
 - **AnswerCard** renders the answer contract: summary first; facts with source chips (tap → source URL/timestamp); risks and unknowns visually distinct (amber/gray); `dataAsOf` always visible on market data; confidence shown as a label, never a percentage.
+- **AccountingReviewCard** shows the source page/field beside each extracted fact and draft line, balance status, duplicate/missing warnings, confidence, and explicit confirm/correct/reject actions.
 - **Degraded states** are first-class UI: queued (model down), partial (search down), unverified (chart couldn't be matched to market data).
 - Thai is the default locale; every string goes through i18n from the first commit (`th` and `en` catalogs).
 
@@ -402,6 +447,7 @@ Thailand's PDPA applies from day one (user financial documents are personal data
 - **Company and tax boundary:** every answer records jurisdiction, entity type, authoritative source, retrieval/effective date when available, assumptions, and missing facts. CherryFin prepares explanations, calculations, drafts, checklists, and evidence; it does not claim that DBD registration, a tax filing, certification, or payment succeeded without authoritative status/receipt evidence.
 - **Professional review:** expense deductibility, VAT/WHT treatment, accounting policy, audit opinion, legal structure, filings, and signatures can require a licensed accountant, auditor, lawyer, tax professional, or government officer. CherryFin must label that boundary instead of guessing.
 - **Calculation integrity:** startup/accounting/tax calculators run deterministic versioned formulas. Inputs, rule/effective period, formula version, source documents, and reviewer decisions are retained as lineage; LLM-only arithmetic is rejected.
+- **No silent posting or filing:** AI output remains a review draft. A user or authorized accounting reviewer must explicitly confirm it; Phase 1 still records no statutory-ledger posting or government submission.
 
 ---
 
@@ -414,9 +460,10 @@ Thailand's PDPA applies from day one (user financial documents are personal data
 | Orchestrator | Golden-file tests: fixed tool outputs → assert answer contract shape, source linkage, and refusal behavior; model calls mocked at the gateway boundary |
 | Channel adapters | Recorded webhook fixtures (real LINE/TG payload shapes), signature verification both pass and fail paths |
 | Vision pipeline | Fixture corpus of chart screenshots plus invoices, receipts, tax documents, statements, and cap tables with expected extraction JSON + confidence floors; run nightly, not per-PR |
+| Accounting pipeline | Golden documents assert extracted totals, field evidence, duplicate/missing checks, balanced proposed lines, stale-review rejection, before/after correction audit, and no silent posting |
 | Startup/accounting/tax | Golden cases for runway, burn, margin, break-even, MRR/ARR, CAC/LTV, VAT/WHT examples, dated company-launch checklists, missing-fact prompts, and professional-review boundaries |
 | Mobile | Component tests for AnswerCard states; Maestro flows for sign-in → ask → answer on an Android emulator, nightly |
-| E2E acceptance | Scripted checklist mapping 1:1 to the fourteen §14 acceptance criteria, run before each release |
+| E2E acceptance | Scripted checklist mapping 1:1 to the fifteen §14 acceptance criteria, run before each release |
 
 CI (GitHub Actions): lint + typecheck + unit on every PR (Turborepo-cached); integration suite on PR to `main`; Android build (EAS) + nightly suites on `main`. Dependency audit (`pnpm audit` + Renovate) and container scan (Trivy) as required by §9.1.
 
@@ -432,4 +479,5 @@ CI (GitHub Actions): lint + typecheck + unit on every PR (Turborepo-cached); int
 6. `traceId` from the HTTP request is visible in logs of API, queue job, model gateway call, and DB rows for one request.
 7. Audit events written for login, message, and run completion; confirmed append-only.
 8. CI runs lint/typecheck/unit/integration green.
-9. One Thai company-launch question and one accounting/tax calculation pass golden tests with authoritative sources, effective/retrieval dates, stored inputs, formula version, unknowns, and professional-review boundaries.
+9. One Thai accounting/tax question and one company-launch question pass golden tests with authoritative sources, effective/retrieval dates, stored inputs, formula version, unknowns, and professional-review boundaries.
+10. One uploaded invoice produces field-level evidence, duplicate/missing checks, a balanced review draft, and a confirm/correct/reject audit event without ledger posting.
