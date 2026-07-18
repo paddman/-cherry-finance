@@ -38,5 +38,6 @@ Phase 5: Execute only behind hard controls
 - Expo React Native
 - Android-first, iOS-ready
 - PostgreSQL, Redis, and S3-compatible object storage
-- OpenAI-compatible model gateway for local Qwen and vision models\n- Multi-asset market layer with venue, currency, session, timestamp, and corporate-action awareness
+- OpenAI-compatible model gateway for local Qwen and vision models
+- Multi-asset market layer with venue, currency, session, timestamp, and corporate-action awareness
 - LINE, Telegram, and Google Drive connectors
