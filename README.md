@@ -2,12 +2,12 @@
 
 **AI Financial Research & Personal Finance Assistant**
 
-CherryFin is an Android-first, iOS-ready financial assistant for asking questions, searching current information, analyzing charts and documents, and sending the results through LINE, Telegram, or Google Drive.
+CherryFin is an Android-first, iOS-ready multi-asset financial assistant for asking questions, searching current information, analyzing stock/crypto charts and documents, and sending the results through LINE, Telegram, or Google Drive.
 
 ## Phase 1
 
 - Thai/English financial and investment Q&A
-- Source-grounded web and market research
+- Source-grounded web and multi-asset market research for SET/mai, NYSE/Nasdaq, ETFs, funds, crypto, FX, and commodities
 - Chart screenshot, PDF, CSV, and spreadsheet analysis
 - LINE and Telegram inbound/outbound messaging
 - Google Drive selected-file search, read, and report save
@@ -38,5 +38,5 @@ Phase 5: Execute only behind hard controls
 - Expo React Native
 - Android-first, iOS-ready
 - PostgreSQL, Redis, and S3-compatible object storage
-- OpenAI-compatible model gateway for local Qwen and vision models
+- OpenAI-compatible model gateway for local Qwen and vision models\n- Multi-asset market layer with venue, currency, session, timestamp, and corporate-action awareness
 - LINE, Telegram, and Google Drive connectors
