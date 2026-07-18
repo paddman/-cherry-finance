@@ -2,7 +2,20 @@
 
 **Document status:** Proposed detailed design
 **Parent:** [CherryFin Full System Design](CherryFin_Full_System_Design.md)
-**Scope:** Everything needed to start Phase 0/1 implementation — concrete stack, schema, API contracts, error model, job contracts, compliance, and testing. Decisions are recorded individually in [docs/adr](../adr).
+**Scope:** Everything needed to start Phase 0/1 implementation — concrete stack, schema, API contracts, error model, job contracts, compliance, and testing. The primary Phase 1 domain is Thailand-first startup/company launch, accounting, tax, and business data; investment research remains supported. Decisions are recorded individually in [docs/adr](../adr).
+
+---
+
+## 0. Phase 1 product boundary
+
+CherryFin Phase 1 is an AI Startup CFO and company-launch assistant delivered through Android, LINE, Telegram, and Google Drive. It can:
+
+- Answer and research Thai company-establishment, accounting, tax, startup-metric, and investment questions using current sources.
+- Analyze invoices, receipts, tax documents, account exports, financial statements, cap tables, budgets, and market charts.
+- Produce deterministic calculations and dated checklists, then save/send them with source evidence.
+- Use DBD Biz Regist/DBD services and Revenue Department e-Filing/e-Tax information as authoritative Thailand-first references.
+
+Phase 1 cannot submit government registrations or tax returns, sign/certify documents, issue audit opinions, represent professional advice, move money, or place trades. It prepares information and evidence for explicit user and professional review.
 
 ---
 
@@ -330,7 +343,7 @@ Any state may transition to `failed` (terminal, with `error_code`) or `degraded`
 
 ### 4.2 Intent classification
 
-Small local model with a fixed label set (`finance.question`, `market.lookup`, `web.research`, `chart.analyze`, `document.summarize`, `drive.search`, `answer.send`, `answer.save`, `smalltalk`, `out_of_scope`). Confidence below threshold → ask a clarifying question instead of guessing. `out_of_scope` (non-finance requests) gets a polite scoped refusal — keeps the product honest and the eval surface small.
+Small local model with a fixed label set (`company.launch`, `company.compliance`, `accounting.question`, `accounting.document_analyze`, `tax.question`, `tax.calendar`, `startup.metrics`, `finance.question`, `market.lookup`, `web.research`, `chart.analyze`, `document.summarize`, `drive.search`, `answer.send`, `answer.save`, `smalltalk`, `out_of_scope`). Confidence below threshold → ask a clarifying question instead of guessing. Requests unrelated to company building, accounting, tax, finance, business data, or investing are `out_of_scope` — keeping the product honest and the eval surface bounded.
 
 ### 4.3 Tool loop guardrails
 
@@ -385,7 +398,10 @@ Thailand's PDPA applies from day one (user financial documents are personal data
 - **Data subject rights:** `DELETE /v1/me` performs hard erasure — user row anonymized, conversations/messages/attachments deleted, object-storage prefix `users/{userId}/` deleted, audit rows retained with `user_id` nulled (legal-basis exception, ids only, no content). Export endpoint (`GET /v1/me/export`) returns a JSON+files archive; both complete within 30 days as required, implemented as worker jobs.
 - **Retention defaults:** conversations until user deletion; raw webhook payload logs 30 days; object-storage originals until message deletion; OTP/link codes purged at expiry + 24h.
 - **Breach readiness:** audit trail + trace ids give the 72-hour notification investigation path; a runbook stub lives in `docs/runbooks/`.
-- **Advice boundary (SEC Thailand):** CherryFin provides information and education, not licensed investment advice. Every recommendations section carries a fixed disclaimer (localized), avoids individualized "you should buy X" phrasing, and the composer's output policy check (§4.5 step 7, parent doc) enforces scenario language. Revisit licensing before Phase 3 personalization.
+- **Advice boundary (SEC Thailand):** CherryFin provides information and education, not licensed investment advice. Every recommendations section carries a fixed disclaimer (localized), avoids individualized "you should buy X" phrasing, and the composer's output policy check (§4.5 step 7, parent doc) enforces scenario language. Revisit licensing before investment personalization.
+- **Company and tax boundary:** every answer records jurisdiction, entity type, authoritative source, retrieval/effective date when available, assumptions, and missing facts. CherryFin prepares explanations, calculations, drafts, checklists, and evidence; it does not claim that DBD registration, a tax filing, certification, or payment succeeded without authoritative status/receipt evidence.
+- **Professional review:** expense deductibility, VAT/WHT treatment, accounting policy, audit opinion, legal structure, filings, and signatures can require a licensed accountant, auditor, lawyer, tax professional, or government officer. CherryFin must label that boundary instead of guessing.
+- **Calculation integrity:** startup/accounting/tax calculators run deterministic versioned formulas. Inputs, rule/effective period, formula version, source documents, and reviewer decisions are retained as lineage; LLM-only arithmetic is rejected.
 
 ---
 
@@ -397,7 +413,8 @@ Thailand's PDPA applies from day one (user financial documents are personal data
 | API | Integration tests with Testcontainers (Postgres + Redis + MinIO); every endpoint tested for authz (wrong-user 404) |
 | Orchestrator | Golden-file tests: fixed tool outputs → assert answer contract shape, source linkage, and refusal behavior; model calls mocked at the gateway boundary |
 | Channel adapters | Recorded webhook fixtures (real LINE/TG payload shapes), signature verification both pass and fail paths |
-| Vision pipeline | Fixture corpus of chart screenshots with expected extraction JSON + confidence floors; run nightly, not per-PR |
+| Vision pipeline | Fixture corpus of chart screenshots plus invoices, receipts, tax documents, statements, and cap tables with expected extraction JSON + confidence floors; run nightly, not per-PR |
+| Startup/accounting/tax | Golden cases for runway, burn, margin, break-even, MRR/ARR, CAC/LTV, VAT/WHT examples, dated company-launch checklists, missing-fact prompts, and professional-review boundaries |
 | Mobile | Component tests for AnswerCard states; Maestro flows for sign-in → ask → answer on an Android emulator, nightly |
 | E2E acceptance | Scripted checklist mapping 1:1 to the fourteen §14 acceptance criteria, run before each release |
 
@@ -415,3 +432,4 @@ CI (GitHub Actions): lint + typecheck + unit on every PR (Turborepo-cached); int
 6. `traceId` from the HTTP request is visible in logs of API, queue job, model gateway call, and DB rows for one request.
 7. Audit events written for login, message, and run completion; confirmed append-only.
 8. CI runs lint/typecheck/unit/integration green.
+9. One Thai company-launch question and one accounting/tax calculation pass golden tests with authoritative sources, effective/retrieval dates, stored inputs, formula version, unknowns, and professional-review boundaries.
