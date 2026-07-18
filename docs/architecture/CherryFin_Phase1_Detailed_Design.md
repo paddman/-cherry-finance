@@ -2,22 +2,23 @@
 
 **Document status:** Proposed detailed design
 **Parent:** [CherryFin Full System Design](CherryFin_Full_System_Design.md)
-**Scope:** Everything needed to start Phase 0/1 implementation — concrete stack, schema, API contracts, error model, job contracts, compliance, and testing. The primary Phase 1 domain is Thailand-first accounting and tax readiness, extended by Startup CFO, company-launch, business-data, and investment research capabilities. Decisions are recorded individually in [docs/adr](../adr).
+**Scope:** Everything needed to start Phase 0/1 implementation — concrete stack, schema, API contracts, error model, job contracts, compliance, and testing. Phase 1 establishes the Thailand-first accounting foundation and the first Full CFO wedge: an evidence-linked CFO brief from uploaded company data. Tax, company-launch, business-data, and investment research remain supported. Decisions are recorded individually in [docs/adr](../adr).
 
 ---
 
 ## 0. Phase 1 product boundary
 
-CherryFin Phase 1 is an accounting-first AI assistant delivered through Android, LINE, Telegram, and Google Drive. Its daily loop is document → extract → draft entry → validate → human review → report/tax readiness. It can:
+CherryFin Phase 1 is the accounting foundation and first usable slice of a Full CFO Operating System, delivered through Android, LINE, Telegram, and Google Drive. Its daily accounting loop is document → extract → draft entry → validate → human review → report/tax readiness. Its first management loop is actuals → forecast → variance/drivers → risks/scenarios → decisions/actions. It can:
 
 - Receive invoices, receipts, statements, withholding-tax certificates, spreadsheets, and accounting exports.
 - Extract accounting facts with field-level evidence and confidence, then detect duplicates, missing fields, arithmetic inconsistencies, and period conflicts.
 - Propose balanced debit/credit draft lines, categories, tax-treatment questions, and supporting-document requests for confirm/correct/reject review.
 - Answer Thai accounting, tax, Startup CFO, company-establishment, business-data, and investment questions using current sources.
+- Produce an evidence-linked CFO brief covering cash, runway, revenue, gross margin, costs, receivables, payables, budget variance, risks, unknowns, and recommended actions from approved uploaded data.
 - Produce deterministic calculations and dated checklists, then save/send them with source evidence.
 - Use DBD Biz Regist/DBD services and Revenue Department e-Filing/e-Tax information as authoritative Thailand-first references.
 
-Phase 1 cannot post unreviewed entries to a statutory ledger, submit government registrations or tax returns, sign/certify documents, issue audit opinions, represent professional advice, move money, or place trades. It prepares traceable drafts and evidence for explicit user or professional review.
+Phase 1 cannot operate a complete ledger/AP/AR/treasury system, post unreviewed entries, release payments, submit government registrations or tax returns, sign/certify documents, issue audit opinions, bind the company, represent professional advice, move money, or place trades. It prepares traceable drafts, CFO analysis, scenarios, and evidence for explicit user or professional review.
 
 ---
 
@@ -176,6 +177,24 @@ CREATE UNIQUE INDEX accounting_drafts_attachment
   ON accounting_drafts (attachment_id)
   WHERE status <> 'rejected';
 
+CREATE TABLE cfo_briefs (
+  id                    uuid PRIMARY KEY,
+  user_id               uuid NOT NULL REFERENCES users(id),
+  period_start          date NOT NULL,
+  period_end            date NOT NULL CHECK (period_end >= period_start),
+  currency              text NOT NULL DEFAULT 'THB',
+  inputs_json           jsonb NOT NULL,             -- approved input set + period/scope
+  sections_json         jsonb NOT NULL,             -- cash, performance, working capital,
+                                                    -- forecast, risks, actions, unknowns
+  evidence_json         jsonb NOT NULL,             -- source ids/fields behind every value
+  calculation_versions  jsonb NOT NULL,             -- deterministic formulas/rules used
+  status                text NOT NULL DEFAULT 'draft'
+                        CHECK (status IN ('draft','final')),
+  created_at            timestamptz NOT NULL DEFAULT now(),
+  updated_at            timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX ON cfo_briefs (user_id, period_end DESC, created_at DESC);
+
 -- Orchestration -------------------------------------------------------
 
 CREATE TABLE agent_runs (
@@ -282,6 +301,7 @@ Notes:
 
 - `messages_dedupe` plus idempotent job ids (ADR-004) together satisfy the no-duplicate-answer acceptance criterion.
 - `accounting_drafts` is a review inbox, not the statutory ledger. Application validation requires total debits = total credits and at least one evidence link per proposed line before a draft can be confirmed.
+- `cfo_briefs` is a versioned management snapshot, not a replacement for audited financial statements. Every numeric field is evidence-linked or explicitly unknown; forecast/scenario values also carry assumptions.
 - Full tool outputs above ~8 KB go to object storage; `tool_calls.output_digest` stores the pointer. Keeps Postgres lean and lets PDPA erasure delete content by prefix.
 - Object storage layout: `users/{userId}/attachments/{attachmentId}` and `users/{userId}/tool-outputs/{toolCallId}` — user-prefix layout makes per-user erasure a prefix delete.
 
@@ -348,7 +368,15 @@ MIME allowlist (Phase 1): `image/png`, `image/jpeg`, `image/webp`, `application/
 
 Every transition is owner-authorized, idempotent, append-audited, and rejects stale status updates. Confirmation means “reviewed draft” in Phase 1; it does not post to a statutory ledger or file a return.
 
-### 3.5 Run streaming (SSE)
+### 3.5 CFO brief workflow
+
+- `POST /v1/cfo/briefs` accepts a period, currency, selected attachment/source ids, and optional scenario assumptions; it enqueues deterministic validation and calculation.
+- `GET /v1/cfo/briefs/{id}` returns cash, performance, working-capital, forecast, risk, action, and unknown sections with evidence/formula links.
+- `GET /v1/cfo/briefs/{id}/export` returns an export-ready management brief for Drive or confirmed channel delivery.
+
+The builder refuses unsupported totals, labels actual/forecast/scenario separately, preserves assumptions, and never invents a missing cash balance, receivable, payable, budget, or KPI.
+
+### 3.6 Run streaming (SSE)
 
 `GET /v1/runs/{id}/events` (also works mid-run; replays from `Last-Event-ID`):
 
@@ -362,7 +390,7 @@ event: error         data: {"code":"MODEL_UNAVAILABLE","traceId":"..."}
 
 Events are also persisted (Redis stream, 24h TTL) so LINE/Telegram flows — which can't hold an SSE connection — deliver the final answer via the worker instead.
 
-### 3.6 Rate limits (initial)
+### 3.7 Rate limits (initial)
 
 | Scope | Limit |
 |---|---|
@@ -370,6 +398,7 @@ Events are also persisted (Redis stream, 24h TTL) so LINE/Telegram flows — whi
 | Email OTP per user | 3/10min |
 | Messages (agent runs) per user | 20/min, 300/day |
 | Attachment creation per user | 10/min |
+| CFO brief builds per user | 5/min |
 | Webhook endpoints per provider | provider-volume + burst, alert on anomaly |
 
 ---
@@ -383,7 +412,7 @@ Any state may transition to `failed` (terminal, with `error_code`) or `degraded`
 
 ### 4.2 Intent classification
 
-Small local model with a fixed label set (`accounting.question`, `accounting.document_analyze`, `accounting.review`, `tax.question`, `tax.calendar`, `startup.metrics`, `company.launch`, `company.compliance`, `finance.question`, `market.lookup`, `web.research`, `chart.analyze`, `document.summarize`, `drive.search`, `answer.send`, `answer.save`, `smalltalk`, `out_of_scope`). Confidence below threshold → ask a clarifying question instead of guessing. Requests unrelated to company building, accounting, tax, finance, business data, or investing are `out_of_scope` — keeping the product honest and the eval surface bounded.
+Small local model with a fixed label set (`accounting.question`, `accounting.document_analyze`, `accounting.review`, `cfo.brief`, `cfo.scenario`, `fpna.variance_analyze`, `treasury.cash_forecast`, `tax.question`, `tax.calendar`, `startup.metrics`, `company.launch`, `company.compliance`, `finance.question`, `market.lookup`, `web.research`, `chart.analyze`, `document.summarize`, `drive.search`, `answer.send`, `answer.save`, `smalltalk`, `out_of_scope`). Confidence below threshold → ask a clarifying question instead of guessing. Requests unrelated to company building, accounting, tax, finance, business data, or investing are `out_of_scope` — keeping the product honest and the eval surface bounded.
 
 ### 4.3 Tool loop guardrails
 
@@ -396,6 +425,8 @@ Small local model with a fixed label set (`accounting.question`, `accounting.doc
 The composer must fill the answer contract (`summary/facts/analysis/risks/unknowns/sources/dataAsOf/confidence`). Enforcement is structural: facts array entries must each carry a `sourceId` referencing a `sources` row; the API rejects persistence of an answer whose facts lack sources. This mechanically implements "ground answers in evidence".
 
 For `accounting.document_analyze`, the final answer also references an `accountingDraftId`. The draft validator rejects unbalanced lines, lines without evidence, unresolved arithmetic mismatches, and any attempt to mark a draft as posted or filed in Phase 1.
+
+For `cfo.brief`, the answer references a `cfoBriefId`. Every reported number must resolve to source evidence plus a deterministic calculation version. Actual, forecast, and scenario values are separate types; missing inputs produce `unknowns`, never fabricated values.
 
 ---
 
@@ -418,6 +449,7 @@ apps/mobile/
     (main)/chat/[id].tsx  # chat + attachments + answer cards
     (main)/accounting-inbox.tsx # pending/confirmed/corrected/rejected drafts
     (main)/accounting/[id].tsx  # evidence + debit/credit review
+    (main)/cfo-brief/[id].tsx    # cash/performance/forecast/risk/action pack
     (main)/connections.tsx# LINE/TG/Drive linking
     (main)/settings.tsx
   src/
@@ -430,6 +462,7 @@ Key UI contracts:
 
 - **AnswerCard** renders the answer contract: summary first; facts with source chips (tap → source URL/timestamp); risks and unknowns visually distinct (amber/gray); `dataAsOf` always visible on market data; confidence shown as a label, never a percentage.
 - **AccountingReviewCard** shows the source page/field beside each extracted fact and draft line, balance status, duplicate/missing warnings, confidence, and explicit confirm/correct/reject actions.
+- **CfoBriefCard** separates actual, forecast, and scenario; shows cash, runway, performance, working capital, variance, risks, unknowns, recommended actions, owners, assumptions, and source/formula links.
 - **Degraded states** are first-class UI: queued (model down), partial (search down), unverified (chart couldn't be matched to market data).
 - Thai is the default locale; every string goes through i18n from the first commit (`th` and `en` catalogs).
 
@@ -448,6 +481,7 @@ Thailand's PDPA applies from day one (user financial documents are personal data
 - **Professional review:** expense deductibility, VAT/WHT treatment, accounting policy, audit opinion, legal structure, filings, and signatures can require a licensed accountant, auditor, lawyer, tax professional, or government officer. CherryFin must label that boundary instead of guessing.
 - **Calculation integrity:** startup/accounting/tax calculators run deterministic versioned formulas. Inputs, rule/effective period, formula version, source documents, and reviewer decisions are retained as lineage; LLM-only arithmetic is rejected.
 - **No silent posting or filing:** AI output remains a review draft. A user or authorized accounting reviewer must explicitly confirm it; Phase 1 still records no statutory-ledger posting or government submission.
+- **CFO authority boundary:** CherryFin may analyze, forecast, recommend, and prepare management/board materials, but it cannot self-approve a budget, payment, payroll, financing, filing, contract, or corporate action. Actual, forecast, scenario, recommendation, and approved decision remain distinct audit states.
 
 ---
 
@@ -461,9 +495,10 @@ Thailand's PDPA applies from day one (user financial documents are personal data
 | Channel adapters | Recorded webhook fixtures (real LINE/TG payload shapes), signature verification both pass and fail paths |
 | Vision pipeline | Fixture corpus of chart screenshots plus invoices, receipts, tax documents, statements, and cap tables with expected extraction JSON + confidence floors; run nightly, not per-PR |
 | Accounting pipeline | Golden documents assert extracted totals, field evidence, duplicate/missing checks, balanced proposed lines, stale-review rejection, before/after correction audit, and no silent posting |
+| CFO brief | Golden company datasets assert source-linked cash/performance/working-capital/forecast sections, actual-vs-scenario separation, formula versions, unknown handling, and deterministic action triggers |
 | Startup/accounting/tax | Golden cases for runway, burn, margin, break-even, MRR/ARR, CAC/LTV, VAT/WHT examples, dated company-launch checklists, missing-fact prompts, and professional-review boundaries |
 | Mobile | Component tests for AnswerCard states; Maestro flows for sign-in → ask → answer on an Android emulator, nightly |
-| E2E acceptance | Scripted checklist mapping 1:1 to the fifteen §14 acceptance criteria, run before each release |
+| E2E acceptance | Scripted checklist mapping 1:1 to the sixteen §14 acceptance criteria, run before each release |
 
 CI (GitHub Actions): lint + typecheck + unit on every PR (Turborepo-cached); integration suite on PR to `main`; Android build (EAS) + nightly suites on `main`. Dependency audit (`pnpm audit` + Renovate) and container scan (Trivy) as required by §9.1.
 
@@ -481,3 +516,4 @@ CI (GitHub Actions): lint + typecheck + unit on every PR (Turborepo-cached); int
 8. CI runs lint/typecheck/unit/integration green.
 9. One Thai accounting/tax question and one company-launch question pass golden tests with authoritative sources, effective/retrieval dates, stored inputs, formula version, unknowns, and professional-review boundaries.
 10. One uploaded invoice produces field-level evidence, duplicate/missing checks, a balanced review draft, and a confirm/correct/reject audit event without ledger posting.
+11. One uploaded company dataset produces a CFO brief with evidence-linked cash, performance, working-capital, forecast, risk, and action sections; missing inputs remain unknown.
