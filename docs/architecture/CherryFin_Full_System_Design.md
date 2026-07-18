@@ -9,7 +9,7 @@
 
 ## 1. Executive Summary
 
-CherryFin is an AI financial assistant that lets a user ask questions, search for information, analyze charts/documents, and send the resulting information to another channel. It starts as an assistant—not a broker, autonomous trader, or full accounting suite.
+CherryFin is an AI financial assistant that lets a user ask questions, search for information, analyze charts/documents, and send the resulting information to another channel. Its market scope is multi-asset from the beginning: Thai equities, US equities, ETFs, funds, crypto assets, FX, and commodities. It starts as an assistant—not a broker, autonomous trader, or full accounting suite.
 
 The system is designed as an extensible financial operating layer:
 
@@ -30,8 +30,8 @@ The central product promise is:
 
 A user can:
 
-1. Ask financial and investment questions in Thai or English.
-2. Search current public information and receive cited answers.
+1. Ask financial and investment questions in Thai or English, including questions about SET/mai stocks, NYSE/Nasdaq stocks, ETFs, funds, and crypto assets.
+2. Search current public market information and receive cited answers with exchange, currency, market status, and data timestamp.
 3. Attach a chart image, screenshot, PDF, CSV, or spreadsheet for analysis.
 4. Search selected files in Google Drive.
 5. Ask CherryFin to send or save an answer through LINE, Telegram, or Google Drive.
@@ -56,6 +56,7 @@ Phase 1 does **not** include:
 | Domain | Phase 1 | Later extension |
 |---|---|---|
 | Financial Q&A | General and source-grounded | Personalized financial planning |
+| Asset coverage | Thai/US equities, ETFs, funds, crypto, FX, commodities | More countries, venues, and licensed datasets |
 | Search | Web, market sources, selected Drive files | Regulatory filings and premium datasets |
 | Vision | Chart/document understanding | Numeric chart reconstruction and multi-timeframe verification |
 | Personal finance | File-based summaries | Ledger, budget, debt, cash-flow forecast |
@@ -241,7 +242,7 @@ Future trading tools are not registered in Phase 1 deployments.
 
 Retrieval sources are separated by trust class:
 
-1. **Authoritative:** Regulators, exchanges, company filings, official documentation.
+1. **Authoritative:** Regulators, exchanges, issuer disclosures, company filings, and official documentation. For equities this includes the relevant exchange, Thai SEC/SET disclosures, US SEC filings, and issuer investor-relations sources where applicable.
 2. **Market data:** Licensed or approved quote/OHLCV providers.
 3. **News:** Selected current news providers.
 4. **User-private:** Files explicitly selected from Google Drive or uploaded by the user.
@@ -287,6 +288,30 @@ If symbol, timeframe, or current price cannot be determined reliably, the answer
 
 ### 4.9 Market Data and Finance Tools
 
+Market support is multi-asset. Phase 1 prioritizes:
+
+- Thai equities on SET and mai.
+- US equities on NYSE and Nasdaq.
+- Exchange-traded funds (ETFs).
+- Mutual-fund/NAV information when a reliable source is available.
+- Crypto spot markets and USDT-denominated assets.
+- FX and commodity reference prices used in financial comparisons.
+
+Every instrument is normalized to a canonical identity instead of relying on ticker text alone:
+
+```json
+{
+  "assetId": "canonical internal id",
+  "assetClass": "equity|etf|fund|crypto|fx|commodity",
+  "symbol": "venue symbol",
+  "venue": "SET|MAI|NYSE|NASDAQ|crypto venue|other",
+  "country": "ISO country code when applicable",
+  "quoteCurrency": "THB|USD|USDT|other",
+  "timezone": "IANA timezone",
+  "tradingCalendar": "calendar id"
+}
+```
+
 The internal provider interface should support:
 
 ```text
@@ -295,9 +320,12 @@ getCandles(symbol, venue, timeframe, from, to)
 getAssetMetadata(symbol, venue)
 getFxRate(base, quote, timestamp)
 getCorporateAction(symbol, range)
+getMarketSession(venue, timestamp)
+getFundamentals(symbol, venue, period)
+getFilings(symbol, venue, range)
 ```
 
-Phase 1 should start provider-light and read-only. Raw data is cached with timestamps and provenance. Calculated indicators are generated internally so the calculation method and parameters remain reproducible.
+Phase 1 should start provider-light and read-only. Every displayed price must identify whether it is real-time, delayed, or end-of-day and must include its timestamp, venue, and quote currency. Equity candles and returns must declare whether corporate actions such as splits and dividends are adjusted. Raw data is cached with timestamps and provenance. Calculated indicators are generated internally so the calculation method and parameters remain reproducible.
 
 ### 4.10 Delivery Service
 
@@ -651,7 +679,8 @@ The repository can begin as a TypeScript monorepo for mobile, API, connectors, a
 - Android chat interface.
 - Thai/English Q&A.
 - Web search and source-grounded responses.
-- Current market lookup.
+- Current/delayed market lookup for SET/mai, NYSE/Nasdaq, ETFs, crypto, FX, and commodities, with venue, currency, market status, and data timestamp.
+- Basic equity research from official disclosures, company information, price history, and deterministic financial calculations.
 - Conversation history.
 
 ### Phase 1B — Files and Vision
@@ -678,8 +707,9 @@ The repository can begin as a TypeScript monorepo for mobile, API, connectors, a
 ### Phase 3 — Investment Intelligence
 
 - Watchlists and portfolio imports.
-- Holdings, allocation, exposure, performance attribution.
-- Company/asset research workspace.
+- Multi-asset holdings across Thai stocks, US stocks, ETFs, funds, crypto, FX, and commodities.
+- Allocation, currency exposure, country/sector concentration, dividends, corporate actions, and performance attribution.
+- Company/asset research workspace with fundamentals, filings, valuation inputs, and source history.
 - Verified technical-analysis pipeline and alerts.
 
 ### Phase 4 — LYRA-9 and Strategy Lab
@@ -711,7 +741,7 @@ Phase 1 is complete when:
 
 1. A user installs an Android build and signs in.
 2. The user asks a Thai financial question and receives a useful answer.
-3. A current-market question includes source and data timestamp.
+3. A current-market question includes asset class, symbol, venue, quote currency, market status, price mode (real-time/delayed/end-of-day), source, and data timestamp.
 4. The user uploads a chart image and receives observations plus explicit limitations.
 5. The system never invents unreadable symbol/timeframe/price values.
 6. The same account can link LINE and Telegram through secure one-time codes.
