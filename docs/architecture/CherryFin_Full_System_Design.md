@@ -1,7 +1,7 @@
 # CherryFin Full System Design
 
 **Document status:** Proposed architecture  
-**Product:** CherryFin — AI Startup CFO, Company Launch & Financial Intelligence Assistant  
+**Product:** CherryFin — AI Accounting, Startup CFO & Company Launch Assistant  
 **Initial platform:** Android-first, iOS-ready, LINE, Telegram, Google Drive  
 **Design principle:** Full-system foundation, deliberately small Phase 1
 
@@ -9,18 +9,18 @@
 
 ## 1. Executive Summary
 
-CherryFin is a Thailand-first AI Startup CFO and company-launch assistant. It helps founders understand how to establish and operate a company, organize business data and documents, understand accounting and tax obligations, calculate startup metrics, research investments, and send the resulting information to another channel. Its market scope remains multi-asset: Thai equities, US equities, ETFs, funds, crypto assets, FX, and commodities. It starts as an assistant—not a licensed accountant, tax adviser, lawyer, broker, autonomous trader, or government filing system.
+CherryFin is a Thailand-first, accounting-first AI assistant. Its daily core is receiving business documents, extracting accounting facts, proposing traceable debit/credit drafts, detecting duplicates and missing evidence, preparing monthly-close and tax-ready work, and routing every material judgment to a human reviewer. Company launch, Startup CFO analytics, tax, and multi-asset investment research extend this accounting core. It starts as an assistant—not a licensed accountant, tax adviser, lawyer, auditor, broker, autonomous trader, or government filing system.
 
 The system is designed as an extensible financial operating layer:
 
-- **Phase 1:** Ask, search, analyze, recommend, and send—focused on starting a company, startup operations, accounting, tax, business data, and investment research.
+- **Phase 1:** Ask, search, analyze, recommend, and send—focused first on accounting questions, document extraction, draft entries, evidence review, tax readiness, and business reporting.
 - **Later:** Company workspace, bookkeeping operations, tax calendar, management reporting, startup analytics, portfolio intelligence, LYRA-9 integration, and carefully gated execution.
 
 All client surfaces use one backend and one identity model. Android, future iOS, LINE, Telegram, and Google Drive are channels—not separate products. Every inbound message enters a Universal Inbox, is normalized into one conversation event format, routed through an orchestrator, uses approved tools, and produces a source-grounded answer.
 
 The central product promise is:
 
-> Ask CherryFin how to start or run a company, give it business/accounting/tax documents or market charts, let it find official information and calculate the numbers, then send a clear answer wherever you need it.
+> Send CherryFin an invoice, receipt, statement, or accounting export; let it extract the evidence, propose how to record it, explain the tax implications, ask for missing facts, and prepare a reviewable accounting result.
 
 ---
 
@@ -41,6 +41,7 @@ A user can:
 9. Analyze invoices, receipts, withholding-tax certificates, account exports, financial statements, cap tables, budgets, and tax-related documents.
 10. Calculate burn rate, runway, gross margin, break-even, MRR/ARR, CAC, LTV, cash-flow scenarios, and common accounting/tax examples using deterministic tools.
 11. Build a compliance calendar and document checklist without CherryFin silently filing or signing anything on the user's behalf.
+12. Review an accounting inbox containing extracted documents, proposed categories and debit/credit lines, duplicate/missing-document warnings, confidence, evidence locations, and reviewer status.
 
 ### 2.2 Explicit Phase 1 non-goals
 
@@ -49,7 +50,7 @@ Phase 1 does **not** include:
 - Autonomous trading.
 - Exchange order placement.
 - Withdrawal permissions.
-- Full bookkeeping or double-entry accounting.
+- Posting to a statutory ledger or operating a complete double-entry bookkeeping system; Phase 1 may prepare balanced, evidence-linked draft entries for human review.
 - Automatic bank synchronization.
 - Automatic government registration, tax filing, digital signing, certification, or payment.
 - Strategy backtesting or ML training.
@@ -82,11 +83,12 @@ Phase 1 does **not** include:
 3. **Ground answers in evidence.** Current facts require sources and timestamps.
 4. **Images are clues, not truth.** A chart screenshot is interpreted visually and, when possible, verified against raw market data.
 5. **Deterministic finance math.** Calculations use code and validated data, not free-form LLM arithmetic.
-6. **Least privilege.** Connectors receive only the permissions required for their task.
-7. **No silent financial action.** Higher-risk capabilities require explicit approval and immutable audit records.
-8. **Provider independence.** LLM, vision, search, market data, and storage providers are behind internal interfaces.
-9. **Truth over visual theater.** Missing values remain missing; the system never creates fake PnL, signals, order books, or confidence.
-10. **Ops-first.** Every request has trace IDs, tool logs, latency metrics, retry state, and a diagnosable failure path.
+6. **Accounting evidence before entry.** Every draft line links to its source document, extracted field, rule/formula version, and reviewer decision.
+7. **Least privilege.** Connectors receive only the permissions required for their task.
+8. **No silent financial action.** Higher-risk capabilities require explicit approval and immutable audit records.
+9. **Provider independence.** LLM, vision, search, market data, and storage providers are behind internal interfaces.
+10. **Truth over visual theater.** Missing values remain missing; the system never creates fake PnL, signals, order books, or confidence.
+11. **Ops-first.** Every request has trace IDs, tool logs, latency metrics, retry state, and a diagnosable failure path.
 
 ---
 
@@ -462,7 +464,16 @@ This preserves a clean Phase 1 schema while reserving clear module boundaries.
 
 ## 7. Key End-to-End Flows
 
-### 7.1 Build a company-launch or tax checklist
+### 7.1 Process an accounting document
+
+1. User uploads an invoice, receipt, statement, withholding-tax certificate, spreadsheet, or accounting export.
+2. Document pipeline extracts parties, tax IDs, document number, dates, currency, subtotal, VAT, withholding tax, total, payment state, and field-level evidence/confidence.
+3. Deterministic rules detect duplicates, arithmetic inconsistencies, missing required fields, and accounting-period conflicts.
+4. CherryFin proposes category, debit/credit draft lines, tax treatment questions, and required supporting documents; uncertain items remain unresolved.
+5. User or accountant confirms, corrects, or rejects the draft. The decision and changes are audited and become feedback data.
+6. Phase 1 stores a confirmed review result but does not silently post to a statutory ledger or file a tax return.
+
+### 7.2 Build a company-launch or tax checklist
 
 1. User states jurisdiction, intended entity type, founders/shareholders, business model, expected revenue, hiring plan, and target launch date.
 2. Orchestrator retrieves current information from authoritative DBD, Revenue Department, and other applicable government sources.
@@ -471,7 +482,7 @@ This preserves a clean Phase 1 schema while reserving clear module boundaries.
 5. User can save the checklist to Drive or send it through LINE/Telegram.
 6. Phase 1 does not submit, sign, certify, or pay a government filing.
 
-### 7.2 Ask a current investment question
+### 7.3 Ask a current investment question
 
 1. User asks from Android or a bot.
 2. Gateway resolves identity and conversation.
@@ -481,7 +492,7 @@ This preserves a clean Phase 1 schema while reserving clear module boundaries.
 6. Model composes an answer with source timestamps and risk notes.
 7. Response is stored and returned to the originating channel.
 
-### 7.3 Analyze a chart screenshot
+### 7.4 Analyze a chart screenshot
 
 1. User uploads a chart with an optional question.
 2. Attachment is scanned, stored, OCR'd, and passed to vision analysis.
@@ -491,7 +502,7 @@ This preserves a clean Phase 1 schema while reserving clear module boundaries.
 6. Answer explains visible structure, limitations, possible scenarios, and invalidation—without presenting certainty as fact.
 7. Original image, structured extraction, sources, and answer are linked for audit.
 
-### 7.4 Search Google Drive and send a summary
+### 7.5 Search Google Drive and send a summary
 
 1. User connects Drive using OAuth.
 2. User selects or searches files permitted to CherryFin.
@@ -501,7 +512,7 @@ This preserves a clean Phase 1 schema while reserving clear module boundaries.
 6. System shows destination and preview.
 7. User confirms; Delivery Service sends and records status.
 
-### 7.5 Cross-channel continuity
+### 7.6 Cross-channel continuity
 
 1. User links LINE and Telegram to the same CherryFin account.
 2. A conversation started in LINE appears in Android history.
@@ -524,6 +535,11 @@ GET    /v1/conversations/{id}/messages
 POST   /v1/conversations/{id}/messages
 POST   /v1/attachments
 GET    /v1/runs/{id}
+GET    /v1/accounting/drafts
+GET    /v1/accounting/drafts/{id}
+POST   /v1/accounting/drafts/{id}/confirm
+POST   /v1/accounting/drafts/{id}/correct
+POST   /v1/accounting/drafts/{id}/reject
 POST   /v1/deliveries/preview
 POST   /v1/deliveries/{id}/confirm
 GET    /v1/connections
@@ -726,14 +742,15 @@ The repository can begin as a TypeScript monorepo for mobile, API, connectors, a
 - Web search and source-grounded responses.
 - Current/delayed market lookup for SET/mai, NYSE/Nasdaq, ETFs, crypto, FX, and commodities, with venue, currency, market status, and data timestamp.
 - Basic equity research from official disclosures, company information, price history, and deterministic financial calculations.
-- Thailand-first company-launch, accounting, tax, and startup Q&A grounded in DBD and Revenue Department sources.
+- Accounting-first Thai Q&A, document guidance, tax readiness, and company/startup support grounded in authoritative sources.
 - Deterministic startup/accounting calculators for burn, runway, margin, break-even, MRR/ARR, CAC/LTV, VAT/WHT examples, and cash-flow scenarios.
 - Conversation history.
 
 ### Phase 1B — Files and Vision
 
 - Image/PDF/CSV upload.
-- OCR and document summaries.
+- OCR and structured extraction for invoices, receipts, statements, withholding-tax certificates, trial balances, and financial statements.
+- Accounting review inbox with proposed categories/debit-credit drafts, evidence links, duplicate/missing-document checks, and human confirm/correct/reject actions.
 - Chart screenshot interpretation.
 - Explicit limitations and verification state.
 
@@ -744,21 +761,27 @@ The repository can begin as a TypeScript monorepo for mobile, API, connectors, a
 - Google Drive OAuth, selected-file read, report save.
 - Channel linking, destination preview, and confirmation.
 
-### Phase 2 — Company Launch & Startup Workspace
+### Phase 2 — Bookkeeping & Monthly Close
+
+- Chart of accounts, journal entries, transaction imports, invoices, receipts, AR/AP, and bank reconciliation.
+- Period locks, close checklist, adjusting-entry review, evidence completeness, and reviewer approvals.
+- Profit and loss, balance sheet, cash flow, budget versus actual, and accountant export/evidence pack.
+
+### Phase 3 — Tax & Compliance
+
+- Tax obligation calendar, VAT/WHT evidence, e-Tax document support, accountant review queue, and filing/payment status.
+- Versioned rules by effective period, reproducible calculations, and authoritative submission receipts/status.
+- Data lineage from source document to extraction, draft, journal entry, tax treatment, reviewer, report, and exported evidence pack.
+
+### Phase 4 — Company Launch & Startup CFO
 
 - Guided Thai company-establishment workspace and dated task checklist.
 - Entity, founder, director, shareholder, registered-capital, accounting-period, and VAT-status profile.
 - Cap table, document pack, board/shareholder records, and investor data-room index.
 - DBD/Revenue/other filing links and status evidence; no silent submission.
+- Budget, forecast, burn, runway, gross margin, break-even, MRR/ARR, CAC/LTV, KPI board, and investor data room.
 
-### Phase 3 — Accounting, Tax & Business Data
-
-- Chart of accounts, transaction imports, invoices, receipts, AR/AP, bank reconciliation, and close workflow.
-- Profit and loss, balance sheet, cash flow, budget versus actual, burn, runway, gross margin, break-even, and startup KPI board.
-- Tax obligation calendar, VAT/WHT evidence, e-Tax document support, accountant review queue, and filing/payment status.
-- Data lineage from source document to extraction, journal entry, report, calculation, reviewer, and exported evidence pack.
-
-### Phase 4 — Personal Finance & Investment Intelligence
+### Phase 5 — Personal Finance & Investment Intelligence
 
 - Watchlists and portfolio imports.
 - Multi-asset holdings across Thai stocks, US stocks, ETFs, funds, crypto, FX, and commodities.
@@ -766,7 +789,7 @@ The repository can begin as a TypeScript monorepo for mobile, API, connectors, a
 - Company/asset research workspace with fundamentals, filings, valuation inputs, and source history.
 - Verified technical-analysis pipeline and alerts.
 
-### Phase 5 — LYRA-9 and Strategy Lab
+### Phase 6 — LYRA-9 and Strategy Lab
 
 - LYRA-9 as a bounded Strategy/Risk module.
 - Trading Journal integration.
@@ -776,7 +799,7 @@ The repository can begin as a TypeScript monorepo for mobile, API, connectors, a
 - Backtest, walk-forward validation, and paper trading.
 - No fake data and no automatic live activation.
 
-### Phase 6 — Guarded Execution
+### Phase 7 — Guarded Execution
 
 - Separate execution service and credentials.
 - No withdrawal permissions.
@@ -785,7 +808,7 @@ The repository can begin as a TypeScript monorepo for mobile, API, connectors, a
 - Reconciliation against exchange fills.
 - Full immutable audit and incident runbooks.
 
-Phase 6 is optional and should proceed only after paper-trading evidence, security review, and operational readiness.
+Phase 7 is optional and should proceed only after paper-trading evidence, security review, and operational readiness.
 
 ---
 
@@ -807,6 +830,7 @@ Phase 1 is complete when:
 12. Financial responses separate factual data, analysis, risk, and unknowns.
 13. A Thai company-launch/tax question returns official sources, jurisdiction, assumptions, effective/retrieval date, missing facts, and a professional-review boundary.
 14. Startup/accounting calculations are reproducible from stored inputs and a versioned deterministic formula.
+15. An uploaded accounting document produces field-level evidence, duplicate/missing-field checks, a reviewable debit/credit draft, and an audited human decision without silently posting to a ledger.
 
 ---
 
@@ -835,7 +859,8 @@ Recommended build order:
 
 | Decision | Choice |
 |---|---|
-| Primary product focus | Thailand-first startup launch, accounting, tax, and business intelligence |
+| Primary product focus | Thailand-first accounting, tax readiness, Startup CFO, and company launch |
+| Daily product loop | Document -> extract -> draft entry -> validate -> human review -> report/tax readiness |
 | Mobile technology | Expo React Native, Android-first/iOS-ready |
 | Interaction model | One orchestrator with versioned tools |
 | Channel model | Adapters feeding one Universal Inbox |
@@ -857,11 +882,12 @@ CherryFin evolves through bounded capability layers rather than one oversized fi
 
 ```text
 Phase 1: Ask + Search + Analyze + Send
-Phase 2: Launch and organize my company
-Phase 3: Run accounting, tax, and business data
-Phase 4: Understand my money and investments
-Phase 5: Test and learn strategies
-Phase 6: Execute only behind hard controls
+Phase 2: Bookkeeping and monthly close
+Phase 3: Tax and compliance
+Phase 4: Launch and run my startup
+Phase 5: Understand my money and investments
+Phase 6: Test and learn strategies
+Phase 7: Execute only behind hard controls
 ```
 
 The Phase 1 product is intentionally simple for users: one conversation, attachments, connected sources, deterministic calculators, and send/save actions. The full architecture underneath ensures that company launch, accounting, tax, startup intelligence, portfolio, LYRA-9, and execution modules can be added without replacing the identity, conversation, channel, evidence, policy, or audit foundations.
