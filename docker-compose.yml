@@ -1,0 +1,206 @@
+name: cherryfin
+
+x-app-environment: &app-environment
+  NODE_ENV: development
+  LOG_LEVEL: ${LOG_LEVEL:-info}
+  APP_VERSION: ${APP_VERSION:-0.1.0}
+  DATABASE_URL: postgres://${POSTGRES_USER:-cherryfin}:${POSTGRES_PASSWORD:-cherryfin}@postgres:5432/${POSTGRES_DB:-cherryfin}
+  REDIS_URL: redis://redis:6379/0
+  OBJECT_STORAGE_ENDPOINT: http://minio:9000
+  OBJECT_STORAGE_BUCKET: ${OBJECT_STORAGE_BUCKET:-cherryfin-private}
+  MODEL_GATEWAY_URL: http://model-gateway:3100
+  INTERNAL_API_KEY: ${INTERNAL_API_KEY:-local-internal-key-change-me}
+  AUTH_MODE: ${AUTH_MODE:-development}
+  DEV_USER_ID: ${DEV_USER_ID:-018f0000-0000-7000-8000-000000000001}
+  DEV_USER_EMAIL: ${DEV_USER_EMAIL:-developer@cherryfin.local}
+  DEV_USER_DISPLAY_NAME: ${DEV_USER_DISPLAY_NAME:-CherryFin Developer}
+  JWT_PUBLIC_KEY_PEM: ${JWT_PUBLIC_KEY_PEM:-}
+  JWT_ISSUER: ${JWT_ISSUER:-cherryfin}
+  JWT_AUDIENCE: ${JWT_AUDIENCE:-cherryfin-api}
+  READINESS_TIMEOUT_MS: ${READINESS_TIMEOUT_MS:-2000}
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-cherryfin}
+      POSTGRES_USER: ${POSTGRES_USER:-cherryfin}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-cherryfin}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - pg_isready -U ${POSTGRES_USER:-cherryfin} -d ${POSTGRES_DB:-cherryfin}
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    image: redis:7.4-alpine
+    restart: unless-stopped
+    command:
+      - redis-server
+      - --appendonly
+      - "yes"
+      - --appendfsync
+      - everysec
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  minio:
+    image: minio/minio:latest
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-cherryfin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-cherryfin-minio-change-me}
+    ports:
+      - "${MINIO_API_PORT:-9000}:9000"
+      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+    volumes:
+      - minio-data:/data
+
+  minio-init:
+    image: minio/mc:latest
+    depends_on:
+      minio:
+        condition: service_started
+    restart: "no"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-cherryfin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-cherryfin-minio-change-me}
+      OBJECT_STORAGE_BUCKET: ${OBJECT_STORAGE_BUCKET:-cherryfin-private}
+    entrypoint:
+      - /bin/sh
+      - -ec
+      - |
+        until mc alias set local http://minio:9000 "$${MINIO_ROOT_USER}" "$${MINIO_ROOT_PASSWORD}"; do
+          sleep 2
+        done
+        mc mb --ignore-existing "local/$${OBJECT_STORAGE_BUCKET}"
+        mc anonymous set none "local/$${OBJECT_STORAGE_BUCKET}"
+
+  migrate:
+    image: postgres:16-alpine
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+    environment:
+      PGPASSWORD: ${POSTGRES_PASSWORD:-cherryfin}
+      POSTGRES_DB: ${POSTGRES_DB:-cherryfin}
+      POSTGRES_USER: ${POSTGRES_USER:-cherryfin}
+    volumes:
+      - ./infra/migrations:/migrations:ro
+    entrypoint:
+      - /bin/sh
+      - -ec
+      - |
+        for file in /migrations/*.sql; do
+          echo "Applying $${file}"
+          psql \
+            --host postgres \
+            --username "$${POSTGRES_USER}" \
+            --dbname "$${POSTGRES_DB}" \
+            --set ON_ERROR_STOP=1 \
+            --file "$${file}"
+        done
+
+  model-gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    command: ["node", "services/model-gateway/dist/server.js"]
+    environment:
+      NODE_ENV: development
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      APP_VERSION: ${APP_VERSION:-0.1.0}
+      MODEL_GATEWAY_PORT: 3100
+      INTERNAL_API_KEY: ${INTERNAL_API_KEY:-local-internal-key-change-me}
+      LOCAL_CHAT_COMPLETIONS_URL: ${LOCAL_CHAT_COMPLETIONS_URL:-http://host.docker.internal:8000/v1/chat/completions}
+      LOCAL_CHAT_MODEL: ${LOCAL_CHAT_MODEL:-qwen-local-chat}
+      LOCAL_SYNTHESIS_COMPLETIONS_URL: ${LOCAL_SYNTHESIS_COMPLETIONS_URL:-http://host.docker.internal:8000/v1/chat/completions}
+      LOCAL_SYNTHESIS_MODEL: ${LOCAL_SYNTHESIS_MODEL:-qwen-local-synthesis}
+      LOCAL_VISION_COMPLETIONS_URL: ${LOCAL_VISION_COMPLETIONS_URL:-http://host.docker.internal:8001/v1/chat/completions}
+      LOCAL_VISION_MODEL: ${LOCAL_VISION_MODEL:-local-vision}
+      LOCAL_MODEL_API_KEY: ${LOCAL_MODEL_API_KEY:-}
+      HOSTED_SYNTHESIS_COMPLETIONS_URL: ${HOSTED_SYNTHESIS_COMPLETIONS_URL:-}
+      HOSTED_SYNTHESIS_MODEL: ${HOSTED_SYNTHESIS_MODEL:-}
+      HOSTED_MODEL_API_KEY: ${HOSTED_MODEL_API_KEY:-}
+      UPSTREAM_TIMEOUT_MS: ${UPSTREAM_TIMEOUT_MS:-60000}
+    ports:
+      - "${MODEL_GATEWAY_PORT:-3100}:3100"
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - fetch('http://localhost:3100/healthz').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))
+      interval: 10s
+      timeout: 3s
+      retries: 20
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    command: ["node", "apps/api/dist/server.js"]
+    environment:
+      <<: *app-environment
+      API_PORT: 3000
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+      model-gateway:
+        condition: service_healthy
+    ports:
+      - "${API_PORT:-3000}:3000"
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - fetch('http://localhost:3000/healthz').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))
+      interval: 10s
+      timeout: 3s
+      retries: 20
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    command: ["node", "apps/worker/dist/index.js"]
+    environment:
+      <<: *app-environment
+      OUTBOX_POLL_INTERVAL_MS: ${OUTBOX_POLL_INTERVAL_MS:-2000}
+      OUTBOX_BATCH_SIZE: ${OUTBOX_BATCH_SIZE:-25}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+
+volumes:
+  postgres-data:
+  redis-data:
+  minio-data:

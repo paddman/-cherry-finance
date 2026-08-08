@@ -1,0 +1,73 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.20.0
+          run_install: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.16.0
+      - name: Install dependencies
+        run: pnpm install --no-frozen-lockfile
+      - name: Lint
+        run: pnpm lint
+      - name: Typecheck
+        run: pnpm typecheck
+      - name: Test
+        run: pnpm test
+      - name: Build
+        run: pnpm build
+      - name: Validate Compose
+        run: docker compose config --quiet
+
+  migration-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: cherryfin
+          POSTGRES_USER: cherryfin
+          POSTGRES_PASSWORD: cherryfin
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U cherryfin -d cherryfin"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apply migrations twice to prove idempotency
+        run: |
+          for pass in 1 2; do
+            docker run --rm --network host \
+              -e PGPASSWORD=cherryfin \
+              -v "$PWD/infra/migrations:/migrations:ro" \
+              postgres:16-alpine \
+              sh -ec 'for file in /migrations/*.sql; do psql -h 127.0.0.1 -U cherryfin -d cherryfin -v ON_ERROR_STOP=1 -f "$file"; done'
+          done
+      - name: Verify foundation tables
+        run: |
+          docker run --rm --network host \
+            -e PGPASSWORD=cherryfin \
+            postgres:16-alpine \
+            psql -h 127.0.0.1 -U cherryfin -d cherryfin -v ON_ERROR_STOP=1 \
+            -c "select count(*) from roles;" \
+            -c "select count(*) from permissions;" \
+            -c "select to_regclass('public.accounting_drafts');"
