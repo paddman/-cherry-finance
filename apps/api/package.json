@@ -1,6 +1,6 @@
 {
   "name": "@cherryfin/api",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "main": "./dist/server.js",
@@ -13,6 +13,10 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1093.0",
+    "@aws-sdk/s3-request-presigner": "^3.1093.0",
+    "@cherryfin/accounting-core": "workspace:*",
+    "@cherryfin/finance-math": "workspace:*",
     "@cherryfin/observability": "workspace:*",
     "@cherryfin/schemas": "workspace:*",
     "@fastify/cors": "^11.0.1",

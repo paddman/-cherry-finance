@@ -4,9 +4,15 @@ import {
   QueueName,
   type QueueName as QueueNameType
 } from '@cherryfin/schemas/jobs';
-import { Queue, type ConnectionOptions } from 'bullmq';
+import {
+  Queue,
+  Worker,
+  type ConnectionOptions
+} from 'bullmq';
 import postgres from 'postgres';
 import { loadWorkerConfig } from './config.js';
+import { createAttachmentProcessor } from './processor.js';
+import { WorkerObjectStorage } from './storage.js';
 
 interface OutboxRow {
   id: string;
@@ -51,8 +57,39 @@ const sql = postgres(config.DATABASE_URL, {
 });
 const connection = redisConnection(config.REDIS_URL);
 const queues = new Map<QueueNameType, Queue>();
+const storage = new WorkerObjectStorage(config);
+const attachmentWorker = new Worker(
+  QueueName.attachments,
+  createAttachmentProcessor(config, storage),
+  {
+    connection,
+    concurrency: config.ATTACHMENT_CONCURRENCY,
+    lockDuration: 180_000
+  }
+);
 let dispatching = false;
 let stopping = false;
+
+attachmentWorker.on('completed', (job) => {
+  console.info(
+    JSON.stringify({
+      level: 'info',
+      event: 'attachment_job.completed',
+      jobId: job.id
+    })
+  );
+});
+attachmentWorker.on('failed', (job, error) => {
+  console.error(
+    JSON.stringify({
+      level: 'error',
+      event: 'attachment_job.failed',
+      jobId: job?.id,
+      attemptsMade: job?.attemptsMade,
+      error: error.message
+    })
+  );
+});
 
 function queueFor(name: string): Queue {
   if (!allowedQueues.has(name as QueueNameType)) {
@@ -78,7 +115,8 @@ async function claimBatch(): Promise<OutboxRow[]> {
     with candidates as (
       select id
       from outbox_events
-      where status = 'pending'
+      where (status = 'pending'
+          or (status = 'processing' and locked_at < now() - interval '5 minutes'))
         and available_at <= now()
       order by created_at
       for update skip locked
@@ -201,7 +239,9 @@ console.info(
     level: 'info',
     event: 'worker.started',
     pollIntervalMs: config.OUTBOX_POLL_INTERVAL_MS,
-    batchSize: config.OUTBOX_BATCH_SIZE
+    batchSize: config.OUTBOX_BATCH_SIZE,
+    attachmentConcurrency: config.ATTACHMENT_CONCURRENCY,
+    scanMode: config.SCAN_MODE
   })
 );
 
@@ -214,6 +254,7 @@ async function shutdown(signal: string): Promise<void> {
   console.info(JSON.stringify({ level: 'info', event: 'worker.stopping', signal }));
 
   await Promise.allSettled([
+    attachmentWorker.close(),
     ...[...queues.values()].map(async (queue) => queue.close()),
     sql.end({ timeout: 5 })
   ]);

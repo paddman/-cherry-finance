@@ -11,7 +11,7 @@ permissions:
 jobs:
   quality:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -23,6 +23,8 @@ jobs:
           node-version: 22.16.0
       - name: Install dependencies
         run: pnpm install --no-frozen-lockfile
+      - name: Validate synthetic fixture
+        run: node -e "JSON.parse(require('node:fs').readFileSync('examples/synthetic-invoice.json','utf8'))"
       - name: Lint
         run: pnpm lint
       - name: Typecheck
@@ -62,12 +64,14 @@ jobs:
               postgres:16-alpine \
               sh -ec 'for file in /migrations/*.sql; do psql -h 127.0.0.1 -U cherryfin -d cherryfin -v ON_ERROR_STOP=1 -f "$file"; done'
           done
-      - name: Verify foundation tables
+      - name: Verify accounting MVP tables and permissions
         run: |
           docker run --rm --network host \
             -e PGPASSWORD=cherryfin \
             postgres:16-alpine \
             psql -h 127.0.0.1 -U cherryfin -d cherryfin -v ON_ERROR_STOP=1 \
             -c "select count(*) from roles;" \
-            -c "select count(*) from permissions;" \
-            -c "select to_regclass('public.accounting_drafts');"
+            -c "select count(*) from permissions where code in ('accounting.read','accounting.write','accounting.review','cfo.read','cfo.write');" \
+            -c "select to_regclass('public.accounting_drafts');" \
+            -c "select to_regclass('public.cfo_briefs');" \
+            -c "select to_regclass('public.cfo_brief_sources');"

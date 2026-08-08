@@ -3,10 +3,12 @@ import { buildApp } from './app.js';
 import { loadApiConfig } from './config.js';
 import { createDatabase } from './database.js';
 import { createReadinessCheck } from './readiness.js';
+import { PostgresAccountingRepository } from './repositories/postgres-accounting.js';
 import {
   ensureDevelopmentUser,
   PostgresOrganizationRepository
 } from './repositories/postgres-organizations.js';
+import { S3ObjectStorage } from './services/object-storage.js';
 
 const config = loadApiConfig();
 const database = createDatabase(config.DATABASE_URL);
@@ -21,6 +23,8 @@ await ensureDevelopmentUser(database.db, config);
 
 const app = await buildApp(config, {
   organizations: new PostgresOrganizationRepository(database.db),
+  accounting: new PostgresAccountingRepository(database.client),
+  objectStorage: new S3ObjectStorage(config),
   readiness: createReadinessCheck(config, database, redis)
 });
 

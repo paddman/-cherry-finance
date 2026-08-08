@@ -1,6 +1,6 @@
 {
   "name": "@cherryfin/schemas",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "main": "./dist/index.js",
@@ -15,8 +15,8 @@
       "default": "./dist/api/index.js"
     },
     "./db": {
-      "types": "./src/db/schema.ts",
-      "default": "./dist/db/schema.js"
+      "types": "./src/db/index.ts",
+      "default": "./dist/db/index.js"
     },
     "./jobs": {
       "types": "./src/jobs.ts",
