@@ -282,7 +282,8 @@ export async function appendAudit(
       ip_address, user_agent
     ) values (
       ${uuidv7()}, ${organizationId}, ${context.userId},
-      ${`user:${context.userId}`}, ${action}, ${sql.json(subject)},
+      ${`user:${context.userId}`}, ${action},
+      ${sql.json(JSON.parse(JSON.stringify(subject)))},
       ${context.traceId}, ${context.ipAddress ?? null}, ${context.userAgent ?? null}
     )
   `;
