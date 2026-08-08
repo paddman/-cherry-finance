@@ -109,8 +109,8 @@ async function persistExtraction(
         ${extraction.counterpartyName ?? null}, ${extraction.counterpartyTaxId ?? null},
         ${extraction.currency}, ${validation.normalized.subtotal},
         ${validation.normalized.vatAmount}, ${validation.normalized.withholdingTaxAmount},
-        ${validation.normalized.totalAmount}, ${transaction.json(extraction)},
-        ${transaction.json(validation)}, ${proposal ? 'extracted' : 'needs_review'}
+        ${validation.normalized.totalAmount}, ${transaction.json(JSON.parse(JSON.stringify(extraction)))},
+        ${transaction.json(JSON.parse(JSON.stringify(validation)))}, ${proposal ? 'extracted' : 'needs_review'}
       )
       on conflict (attachment_id) do update set
         document_type = excluded.document_type,
@@ -147,7 +147,7 @@ async function persistExtraction(
         and entity_type in ('accounting_document', 'accounting_draft')
     `;
     await insertEvidence(
-      transaction,
+      transaction as unknown as Sql,
       attachment.organizationId,
       attachment.id,
       'accounting_document',
@@ -202,7 +202,7 @@ async function persistExtraction(
         `;
       }
       await insertEvidence(
-        transaction,
+        transaction as unknown as Sql,
         attachment.organizationId,
         attachment.id,
         'accounting_draft',
@@ -214,11 +214,11 @@ async function persistExtraction(
     await transaction`
       update attachments set
         scan_status = 'clean', extract_status = 'done',
-        metadata = metadata || ${transaction.json({
+        metadata = metadata || ${transaction.json(JSON.parse(JSON.stringify({
           processor: { completedAt: new Date().toISOString(), traceId },
           draftCreated: Boolean(effectiveDraftId),
           validation
-        })},
+        })))},
         updated_at = now()
       where id = ${attachment.id}
     `;
@@ -320,11 +320,11 @@ export async function completeAttachment(
   const rows = await sql<AttachmentRow[]>`
     update attachments set
       scan_status = 'pending', extract_status = 'pending',
-      metadata = metadata || ${sql.json({
+      metadata = metadata || ${sql.json(JSON.parse(JSON.stringify({
         uploadStatus: 'verified',
         storageVerification,
         verifiedAt: new Date().toISOString()
-      })}, updated_at = now()
+      })))}, updated_at = now()
     where id = ${attachmentId}
     returning *
   `;
@@ -340,6 +340,7 @@ export async function completeAttachment(
         companyId: attachment.companyId,
         objectKey: attachment.objectKey,
         mimeType: attachment.mimeType,
+        originalFilename: attachment.originalFilename,
         byteSize: attachment.byteSize,
         sha256: attachment.sha256
       })}
@@ -384,7 +385,7 @@ export async function applyWorkerResult(
   if (result.status === 'processing') {
     await sql`
       update attachments set extract_status = 'processing',
-        metadata = metadata || ${sql.json(result)}, updated_at = now()
+        metadata = metadata || ${sql.json(JSON.parse(JSON.stringify(result)))}, updated_at = now()
       where id = ${attachmentId}
     `;
     return;
@@ -392,7 +393,7 @@ export async function applyWorkerResult(
   if (result.status === 'infected') {
     await sql`
       update attachments set scan_status = 'infected', extract_status = 'failed',
-        metadata = metadata || ${sql.json(result)}, updated_at = now()
+        metadata = metadata || ${sql.json(JSON.parse(JSON.stringify(result)))}, updated_at = now()
       where id = ${attachmentId}
     `;
     return;
@@ -400,7 +401,7 @@ export async function applyWorkerResult(
   if (result.status === 'failed') {
     await sql`
       update attachments set scan_status = ${result.scanStatus}, extract_status = 'failed',
-        metadata = metadata || ${sql.json(result)}, updated_at = now()
+        metadata = metadata || ${sql.json(JSON.parse(JSON.stringify(result)))}, updated_at = now()
       where id = ${attachmentId}
     `;
     return;
