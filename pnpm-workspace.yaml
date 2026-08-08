@@ -2,3 +2,10 @@ packages:
   - apps/*
   - services/*
   - packages/*
+
+# pnpm 11 blocks dependency lifecycle scripts unless they are reviewed here.
+# esbuild requires its platform binary setup. msgpackr-extract is optional and
+# remains disabled so the JavaScript fallback is used instead of native code.
+allowBuilds:
+  esbuild: true
+  msgpackr-extract: false
