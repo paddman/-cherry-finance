@@ -1,0 +1,147 @@
+import { createTraceId, logRedactPaths } from '@cherryfin/observability';
+import cors from '@fastify/cors';
+import rateLimit from '@fastify/rate-limit';
+import swagger from '@fastify/swagger';
+import swaggerUi from '@fastify/swagger-ui';
+import Fastify, { type FastifyInstance } from 'fastify';
+import {
+  jsonSchemaTransform,
+  serializerCompiler,
+  validatorCompiler
+} from 'fastify-type-provider-zod';
+import type { ApiConfig } from './config.js';
+import type { OrganizationRepository } from './domain/organizations.js';
+import { AppError } from './errors.js';
+import { registerAuthentication } from './plugins/auth.js';
+import type { ReadinessCheck } from './readiness.js';
+import { healthRoutes } from './routes/health.js';
+import { organizationRoutes } from './routes/organizations.js';
+
+export interface AppServices {
+  organizations: OrganizationRepository;
+  readiness: ReadinessCheck;
+}
+
+export async function buildApp(
+  config: ApiConfig,
+  services: AppServices
+): Promise<FastifyInstance> {
+  const app = Fastify({
+    logger:
+      config.NODE_ENV === 'test'
+        ? false
+        : {
+            level: config.LOG_LEVEL,
+            redact: {
+              paths: [...logRedactPaths],
+              censor: '[REDACTED]'
+            }
+          },
+    genReqId: () => createTraceId(),
+    trustProxy: true,
+    requestTimeout: 65_000,
+    bodyLimit: 1_048_576
+  });
+
+  app.setValidatorCompiler(validatorCompiler);
+  app.setSerializerCompiler(serializerCompiler);
+
+  await app.register(cors, {
+    origin: config.NODE_ENV === 'development',
+    credentials: false
+  });
+  await app.register(rateLimit, {
+    max: 300,
+    timeWindow: '1 minute',
+    keyGenerator: (request) => request.ip
+  });
+
+  if (config.OPENAPI_ENABLED) {
+    await app.register(swagger, {
+      openapi: {
+        info: {
+          title: 'CherryFin API',
+          description:
+            'Tenant-aware foundation API for CherryFin accounting and CFO workflows',
+          version: config.APP_VERSION
+        },
+        servers: []
+      },
+      transform: jsonSchemaTransform
+    });
+    await app.register(swaggerUi, {
+      routePrefix: '/docs',
+      staticCSP: true
+    });
+  }
+
+  app.addHook('onSend', async (request, reply, payload) => {
+    reply.header('x-trace-id', request.id);
+    return payload;
+  });
+
+  app.setNotFoundHandler(async (request, reply) => {
+    return reply.code(404).send({
+      error: {
+        code: 'NOT_FOUND',
+        message: 'The requested route was not found',
+        traceId: request.id
+      }
+    });
+  });
+
+  app.setErrorHandler(async (error, request, reply) => {
+    const validation = 'validation' in error ? error.validation : undefined;
+    const isValidationError = Array.isArray(validation);
+    const appError = error instanceof AppError ? error : undefined;
+    const statusCode = appError?.statusCode ?? (isValidationError ? 400 : 500);
+    const code = appError?.code ?? (isValidationError ? 'VALIDATION_FAILED' : 'INTERNAL_ERROR');
+    const message =
+      appError?.message ??
+      (isValidationError
+        ? 'Request validation failed'
+        : 'An unexpected error occurred');
+
+    if (statusCode >= 500) {
+      request.log.error({ err: error, traceId: request.id }, message);
+    } else {
+      request.log.warn({ err: error, traceId: request.id }, message);
+    }
+
+    const details = appError?.details ??
+      (isValidationError
+        ? {
+            issues: validation.map((issue) => ({
+              path: issue.instancePath,
+              keyword: issue.keyword,
+              message: issue.message
+            }))
+          }
+        : undefined);
+
+    return reply.code(statusCode).send({
+      error: {
+        code,
+        message,
+        traceId: request.id,
+        ...(details ? { details } : {})
+      }
+    });
+  });
+
+  await app.register(healthRoutes, {
+    config,
+    readiness: services.readiness
+  });
+
+  const authenticate = await registerAuthentication(app, config);
+  await app.register(async (protectedApp) => {
+    protectedApp.addHook('preHandler', authenticate);
+    await protectedApp.register(organizationRoutes, {
+      prefix: '/v1',
+      repository: services.organizations
+    });
+  });
+
+  return app;
+}

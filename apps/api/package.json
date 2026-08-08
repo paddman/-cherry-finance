@@ -1,0 +1,34 @@
+{
+  "name": "@cherryfin/api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/server.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run",
+    "dev": "tsx watch src/server.ts",
+    "start": "node dist/server.js",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@cherryfin/observability": "workspace:*",
+    "@cherryfin/schemas": "workspace:*",
+    "@fastify/cors": "^11.0.1",
+    "@fastify/rate-limit": "^10.3.0",
+    "@fastify/swagger": "^9.5.1",
+    "@fastify/swagger-ui": "^5.2.3",
+    "drizzle-orm": "^0.45.2",
+    "fastify": "^5.10.0",
+    "fastify-type-provider-zod": "^6.1.0",
+    "ioredis": "^5.7.0",
+    "jose": "^6.1.0",
+    "postgres": "^3.4.9",
+    "uuidv7": "^1.2.1",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "tsx": "^4.20.3"
+  }
+}
