@@ -14,7 +14,7 @@ const AttachmentPayloadSchema = z.object({
   companyId: z.string().uuid(),
   objectKey: z.string().min(1),
   mimeType: z.string().min(1),
-  originalFilename: z.string().min(1),
+  originalFilename: z.string().min(1).optional(),
   byteSize: z.number().int().min(1).max(26_214_400),
   sha256: z.string().regex(/^[a-f0-9]{64}$/i)
 });
