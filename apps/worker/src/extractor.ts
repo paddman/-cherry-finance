@@ -133,7 +133,7 @@ function dateValue(text: string): string | null {
 }
 
 function heuristicExtraction(text: string): ExtractedAccountingDocument | null {
-  const compact = text.replace(/\u0000/g, ' ').replace(/[ \t]+/g, ' ');
+  const compact = text.replaceAll('\u0000', ' ').replace(/[ \t]+/g, ' ');
   const totalAmount = amount(compact, [
     'ยอดรวมสุทธิ',
     'รวมทั้งสิ้น',
