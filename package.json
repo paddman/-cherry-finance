@@ -1,0 +1,30 @@
+{
+  "name": "cherryfin",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Thailand-first AI accounting and CFO operating system",
+  "type": "module",
+  "packageManager": "pnpm@11.20.0",
+  "engines": {
+    "node": ">=22.13 <23"
+  },
+  "scripts": {
+    "build": "turbo run build",
+    "dev": "turbo run dev --parallel",
+    "lint": "eslint .",
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test",
+    "clean": "turbo run clean && rm -rf node_modules .turbo",
+    "db:generate": "drizzle-kit generate --config=drizzle.config.ts"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.32.0",
+    "@types/node": "^22.18.0",
+    "drizzle-kit": "^0.31.4",
+    "eslint": "^9.32.0",
+    "turbo": "^2.5.6",
+    "typescript": "^5.8.3",
+    "typescript-eslint": "^8.39.0",
+    "vitest": "^4.1.10"
+  }
+}
