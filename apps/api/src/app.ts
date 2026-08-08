@@ -22,6 +22,21 @@ export interface AppServices {
   readiness: ReadinessCheck;
 }
 
+interface ValidationIssue {
+  instancePath?: string;
+  keyword?: string;
+  message?: string;
+}
+
+function validationIssues(error: unknown): ValidationIssue[] {
+  if (typeof error !== 'object' || error === null || !('validation' in error)) {
+    return [];
+  }
+
+  const validation = (error as { validation?: unknown }).validation;
+  return Array.isArray(validation) ? (validation as ValidationIssue[]) : [];
+}
+
 export async function buildApp(
   config: ApiConfig,
   services: AppServices
@@ -91,11 +106,13 @@ export async function buildApp(
   });
 
   app.setErrorHandler(async (error, request, reply) => {
-    const validation = 'validation' in error ? error.validation : undefined;
-    const isValidationError = Array.isArray(validation);
+    const issues = validationIssues(error);
+    const isValidationError = issues.length > 0;
     const appError = error instanceof AppError ? error : undefined;
     const statusCode = appError?.statusCode ?? (isValidationError ? 400 : 500);
-    const code = appError?.code ?? (isValidationError ? 'VALIDATION_FAILED' : 'INTERNAL_ERROR');
+    const code =
+      appError?.code ??
+      (isValidationError ? 'VALIDATION_FAILED' : 'INTERNAL_ERROR');
     const message =
       appError?.message ??
       (isValidationError
@@ -108,13 +125,14 @@ export async function buildApp(
       request.log.warn({ err: error, traceId: request.id }, message);
     }
 
-    const details = appError?.details ??
+    const details =
+      appError?.details ??
       (isValidationError
         ? {
-            issues: validation.map((issue) => ({
-              path: issue.instancePath,
-              keyword: issue.keyword,
-              message: issue.message
+            issues: issues.map((issue) => ({
+              path: issue.instancePath ?? '',
+              keyword: issue.keyword ?? 'validation',
+              message: issue.message ?? 'Invalid value'
             }))
           }
         : undefined);

@@ -1,4 +1,4 @@
-import Redis from 'ioredis';
+import { Redis } from 'ioredis';
 import { buildApp } from './app.js';
 import { loadApiConfig } from './config.js';
 import { createDatabase } from './database.js';

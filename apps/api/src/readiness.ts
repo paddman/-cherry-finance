@@ -1,6 +1,6 @@
 import { elapsedMilliseconds, fetchWithTimeout } from '@cherryfin/observability';
 import type { HealthResponse } from '@cherryfin/schemas/api';
-import type Redis from 'ioredis';
+import type { Redis } from 'ioredis';
 import type { ApiConfig } from './config.js';
 import type { DatabaseResources } from './database.js';
 
