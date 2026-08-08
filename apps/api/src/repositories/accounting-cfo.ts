@@ -198,8 +198,10 @@ export async function createCfoBrief(
         currency, status, inputs, sections, calculation_versions, generated_by
       ) values (
         ${briefId}, ${organizationId}, ${companyId}, ${input.periodStart},
-        ${input.periodEnd}, ${currency}, 'draft', ${transaction.json(inputs)},
-        ${transaction.json(sections)}, ${transaction.json(calculationVersions)},
+        ${input.periodEnd}, ${currency}, 'draft',
+        ${transaction.json(JSON.parse(JSON.stringify(inputs)))},
+        ${transaction.json(JSON.parse(JSON.stringify(sections)))},
+        ${transaction.json(JSON.parse(JSON.stringify(calculationVersions)))},
         ${context.userId}
       ) returning *
     `;
@@ -224,12 +226,18 @@ export async function createCfoBrief(
         on conflict do nothing
       `;
     }
-    await appendAudit(transaction, context, organizationId, 'cfo_brief.generated', {
-      briefId,
-      companyId,
-      periodStart: input.periodStart,
-      periodEnd: input.periodEnd
-    });
+    await appendAudit(
+      transaction as unknown as Sql,
+      context,
+      organizationId,
+      'cfo_brief.generated',
+      {
+        briefId,
+        companyId,
+        periodStart: input.periodStart,
+        periodEnd: input.periodEnd
+      }
+    );
     return inserted;
   });
 
