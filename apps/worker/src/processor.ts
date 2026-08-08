@@ -86,7 +86,7 @@ export function createAttachmentProcessor(
     const payload = AttachmentPayloadSchema.parse(envelope.payload);
     const traceId = envelope.traceId ?? `attachment-${payload.attachmentId}`;
     const startedAt = performance.now();
-    let scanMethod = config.SCAN_MODE;
+    let scanMethod: string = config.SCAN_MODE;
     let scanPassed = false;
 
     await postResult(config, payload.attachmentId, traceId, {
