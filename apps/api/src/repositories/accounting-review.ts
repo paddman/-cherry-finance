@@ -141,7 +141,11 @@ export async function reviewDraft(
     let note: string | undefined;
 
     if (command.action === 'corrected') {
-      const totals = await replaceLines(transaction, draftId, command.input);
+      const totals = await replaceLines(
+        transaction as unknown as Sql,
+        draftId,
+        command.input
+      );
       totalDebit = totals.debit;
       totalCredit = totals.credit;
       note = command.input.note;
@@ -202,7 +206,7 @@ export async function reviewDraft(
       )
     `;
     await appendAudit(
-      transaction,
+      transaction as unknown as Sql,
       context,
       draft.organization_id,
       `accounting_draft.${command.action}`,
