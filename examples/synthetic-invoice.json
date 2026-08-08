@@ -1,0 +1,48 @@
+{
+  "schemaVersion": "1.0",
+  "documentType": "invoice",
+  "direction": "purchase",
+  "documentNumber": "SYN-INV-2026-0001",
+  "issueDate": "2026-08-08",
+  "counterpartyName": "Synthetic Vendor Co., Ltd.",
+  "counterpartyTaxId": "0105559999999",
+  "currency": "THB",
+  "subtotal": "1000.00",
+  "vatAmount": "70.00",
+  "withholdingTaxAmount": null,
+  "totalAmount": "1070.00",
+  "description": "Synthetic software service invoice for demonstration",
+  "confidence": "high",
+  "extractionMethod": "json",
+  "fields": [
+    {
+      "fieldName": "documentNumber",
+      "value": "SYN-INV-2026-0001",
+      "pageNumber": 1,
+      "confidence": 1
+    },
+    {
+      "fieldName": "subtotal",
+      "value": "1000.00",
+      "pageNumber": 1,
+      "confidence": 1
+    },
+    {
+      "fieldName": "vatAmount",
+      "value": "70.00",
+      "pageNumber": 1,
+      "confidence": 1
+    },
+    {
+      "fieldName": "totalAmount",
+      "value": "1070.00",
+      "pageNumber": 1,
+      "confidence": 1
+    }
+  ],
+  "raw": {
+    "synthetic": true,
+    "containsRealCustomerData": false,
+    "fixtureVersion": "1.0.0"
+  }
+}

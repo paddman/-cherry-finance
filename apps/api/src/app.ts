@@ -10,15 +10,24 @@ import {
   validatorCompiler
 } from 'fastify-type-provider-zod';
 import type { ApiConfig } from './config.js';
+import type {
+  AccountingRepository,
+  ObjectStorage
+} from './domain/accounting.js';
 import type { OrganizationRepository } from './domain/organizations.js';
 import { AppError } from './errors.js';
 import { registerAuthentication } from './plugins/auth.js';
 import type { ReadinessCheck } from './readiness.js';
+import { accountingRoutes } from './routes/accounting.js';
+import { demoRoutes } from './routes/demo.js';
 import { healthRoutes } from './routes/health.js';
+import { internalRoutes } from './routes/internal.js';
 import { organizationRoutes } from './routes/organizations.js';
 
 export interface AppServices {
   organizations: OrganizationRepository;
+  accounting: AccountingRepository;
+  objectStorage: ObjectStorage;
   readiness: ReadinessCheck;
 }
 
@@ -77,7 +86,7 @@ export async function buildApp(
         info: {
           title: 'CherryFin API',
           description:
-            'Tenant-aware foundation API for CherryFin accounting and CFO workflows',
+            'Tenant-aware accounting intake, human review, and deterministic CFO brief API',
           version: config.APP_VERSION
         },
         servers: []
@@ -92,6 +101,8 @@ export async function buildApp(
 
   app.addHook('onSend', async (request, reply, payload) => {
     reply.header('x-trace-id', request.id);
+    reply.header('x-content-type-options', 'nosniff');
+    reply.header('referrer-policy', 'no-referrer');
     return payload;
   });
 
@@ -152,12 +163,27 @@ export async function buildApp(
     readiness: services.readiness
   });
 
+  if (config.DEMO_APP_ENABLED) {
+    await app.register(demoRoutes);
+  }
+
+  await app.register(internalRoutes, {
+    prefix: '/internal/v1',
+    config,
+    repository: services.accounting
+  });
+
   const authenticate = await registerAuthentication(app, config);
   await app.register(async (protectedApp) => {
     protectedApp.addHook('preHandler', authenticate);
     await protectedApp.register(organizationRoutes, {
       prefix: '/v1',
       repository: services.organizations
+    });
+    await protectedApp.register(accountingRoutes, {
+      prefix: '/v1',
+      repository: services.accounting,
+      storage: services.objectStorage
     });
   });
 

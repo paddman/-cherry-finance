@@ -15,6 +15,7 @@ COPY services/model-gateway/package.json services/model-gateway/package.json
 COPY packages/schemas/package.json packages/schemas/package.json
 COPY packages/finance-math/package.json packages/finance-math/package.json
 COPY packages/observability/package.json packages/observability/package.json
+COPY packages/accounting-core/package.json packages/accounting-core/package.json
 
 RUN pnpm install --no-frozen-lockfile
 
@@ -28,7 +29,10 @@ ENV PNPM_HOME=/pnpm
 ENV PATH=$PNPM_HOME:$PATH
 WORKDIR /workspace
 
-RUN corepack enable \
+RUN apt-get update \
+  && apt-get install --yes --no-install-recommends ca-certificates poppler-utils \
+  && rm -rf /var/lib/apt/lists/* \
+  && corepack enable \
   && corepack prepare pnpm@11.20.0 --activate \
   && groupadd --system --gid 10001 cherryfin \
   && useradd --system --uid 10001 --gid cherryfin --home /workspace cherryfin
